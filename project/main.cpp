@@ -31,61 +31,61 @@ using std::max;
 ///////////////////////////////////////////////////////////////////////////////
 // Various globals
 ///////////////////////////////////////////////////////////////////////////////
-SDL_Window* g_window = nullptr;
-float currentTime = 0.0f;
-float previousTime = 0.0f;
-float deltaTime = 0.0f;
-bool showUI = false;
-int windowWidth, windowHeight;
+SDL_Window*		g_window		= nullptr;
+float			currentTime		= 0.0f;
+float			previousTime	= 0.0f;
+float			deltaTime		= 0.0f;
+bool			showUI			= false;
+int				windowWidth		= 0;
+int				windowHeight	= 0;
 
 // Mouse input
-ivec2 g_prevMouseCoords = { -1, -1 };
-bool g_isMouseDragging = false;
+ivec2	g_prevMouseCoords	= { -1, -1 };
+bool	g_isMouseDragging	= false;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Shader programs
 ///////////////////////////////////////////////////////////////////////////////
-GLuint shaderProgram;       // Shader for rendering the final image
-GLuint simpleShaderProgram; // Shader used to draw the shadow map
+GLuint shaderProgram;			// Shader for rendering the final image
+GLuint simpleShaderProgram;		// Shader used to draw the shadow map
 GLuint backgroundProgram;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
 ///////////////////////////////////////////////////////////////////////////////
-float environment_multiplier = 1.5f;
-GLuint environmentMap, irradianceMap, reflectionMap;
-const std::string envmap_base_name = "001";
+float	environment_multiplier = 1.5f;
+GLuint	environmentMap;
+GLuint	irradianceMap;
+GLuint	reflectionMap;
+const	std::string envmap_base_name = "001";
 
 ///////////////////////////////////////////////////////////////////////////////
 // Light source
 ///////////////////////////////////////////////////////////////////////////////
-vec3 lightPosition;
-vec3 point_light_color = vec3(1.f, 1.f, 1.f);
+vec3	lightPosition;
+vec3	point_light_color = vec3(1.f, 1.f, 1.f);
 
-float point_light_intensity_multiplier = 10000.0f;
-
-
-
+float	point_light_intensity_multiplier = 10000.0f;
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Camera parameters.
 ///////////////////////////////////////////////////////////////////////////////
-vec3 cameraPosition(-70.0f, 50.0f, 70.0f);
-vec3 cameraDirection = normalize(vec3(0.0f) - cameraPosition);
-float cameraSpeed = 10.f;
+vec3	cameraPosition(-70.0f, 50.0f, 70.0f);
+vec3	cameraDirection = normalize(vec3(0.0f) - cameraPosition);
+float	cameraSpeed = 10.f;
 
-vec3 worldUp(0.0f, 1.0f, 0.0f);
+vec3	worldUp(0.0f, 1.0f, 0.0f);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Models
 ///////////////////////////////////////////////////////////////////////////////
-labhelper::Model* fighterModel = nullptr;
-labhelper::Model* landingpadModel = nullptr;
+labhelper::Model*	fighterModel		= nullptr;
+labhelper::Model*	landingpadModel		= nullptr;
 
-mat4 roomModelMatrix;
-mat4 landingPadModelMatrix;
-mat4 fighterModelMatrix;
+mat4	roomModelMatrix;
+mat4	landingPadModelMatrix;
+mat4	fighterModelMatrix;
 
 float shipSpeed = 50;
 
@@ -130,31 +130,28 @@ void initialize()
 	///////////////////////////////////////////////////////////////////////
 	// Load models and set up model matrices
 	///////////////////////////////////////////////////////////////////////
-	fighterModel = labhelper::loadModelFromOBJ("../scenes/space-ship.obj");
-	landingpadModel = labhelper::loadModelFromOBJ("../scenes/landingpad.obj");
+	fighterModel		= labhelper::loadModelFromOBJ("../scenes/space-ship.obj");
+	landingpadModel		= labhelper::loadModelFromOBJ("../scenes/landingpad.obj");
 
-	roomModelMatrix = mat4(1.0f);
-	fighterModelMatrix = translate(15.0f * worldUp);
-	landingPadModelMatrix = mat4(1.0f);
+	roomModelMatrix			= mat4(1.0f);
+	fighterModelMatrix		= translate(15.0f * worldUp);
+	landingPadModelMatrix	= mat4(1.0f);
 
 	///////////////////////////////////////////////////////////////////////
 	// Load environment map
 	///////////////////////////////////////////////////////////////////////
 	const int roughnesses = 8;
 	std::vector<std::string> filenames;
+
 	for(int i = 0; i < roughnesses; i++)
 		filenames.push_back("../scenes/envmaps/" + envmap_base_name + "_dl_" + std::to_string(i) + ".hdr");
 
-	environmentMap = labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + ".hdr");
-	irradianceMap = labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + "_irradiance.hdr");
-	reflectionMap = labhelper::loadHdrMipmapTexture(filenames);
-
-
+	environmentMap	= labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + ".hdr");
+	irradianceMap	= labhelper::loadHdrTexture("../scenes/envmaps/" + envmap_base_name + "_irradiance.hdr");
+	reflectionMap	= labhelper::loadHdrMipmapTexture(filenames);
 
 	glEnable(GL_DEPTH_TEST); // enable Z-buffering
 	glEnable(GL_CULL_FACE);  // enables backface culling
-
-
 
 }
 
@@ -163,9 +160,9 @@ void debugDrawLight(const glm::mat4& viewMatrix,
                     const glm::vec3& worldSpaceLightPos)
 {
 	mat4 modelMatrix = glm::translate(worldSpaceLightPos);
+	mat4 mvp = projectionMatrix * viewMatrix * modelMatrix; // Model-View-Projection Matrix
 	glUseProgram(simpleShaderProgram);
-	labhelper::setUniformSlow(simpleShaderProgram, "modelViewProjectionMatrix",
-	                          projectionMatrix * viewMatrix * modelMatrix);
+	labhelper::setUniformSlow(simpleShaderProgram, "modelViewProjectionMatrix", mvp);
 	labhelper::setUniformSlow(simpleShaderProgram, "material_color", vec3(1, 1, 1));
 	labhelper::debugDrawSphere();
 }
@@ -173,9 +170,14 @@ void debugDrawLight(const glm::mat4& viewMatrix,
 
 void drawBackground(const mat4& viewMatrix, const mat4& projectionMatrix)
 {
+	/*
+	Recall the background is a full-screen quad that it is define in screen-space, using normalized device coordinates.
+	The quad needs the inverse of the projection and view matrix to pass the quad into world-space coordinates
+	*/
 	glUseProgram(backgroundProgram);
 	labhelper::setUniformSlow(backgroundProgram, "environment_multiplier", environment_multiplier);
-	labhelper::setUniformSlow(backgroundProgram, "inv_PV", inverse(projectionMatrix * viewMatrix));
+	mat4 invProjectionView = inverse(projectionMatrix * viewMatrix);
+	labhelper::setUniformSlow(backgroundProgram, "inv_PV", invProjectionView);
 	labhelper::setUniformSlow(backgroundProgram, "camera_pos", cameraPosition);
 	labhelper::drawFullScreenQuad();
 }
@@ -194,9 +196,9 @@ void drawScene(GLuint currentShaderProgram,
 	// Light source
 	vec4 viewSpaceLightPosition = viewMatrix * vec4(lightPosition, 1.0f);
 	labhelper::setUniformSlow(currentShaderProgram, "point_light_color", point_light_color);
-	labhelper::setUniformSlow(currentShaderProgram, "point_light_intensity_multiplier",
-	                          point_light_intensity_multiplier);
+	labhelper::setUniformSlow(currentShaderProgram, "point_light_intensity_multiplier", point_light_intensity_multiplier);
 	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightPosition", vec3(viewSpaceLightPosition));
+
 	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightDir",
 	                          normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f))));
 
@@ -208,11 +210,15 @@ void drawScene(GLuint currentShaderProgram,
 	labhelper::setUniformSlow(currentShaderProgram, "viewInverse", inverse(viewMatrix));
 
 	// landing pad
-	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix",
-	                          projectionMatrix * viewMatrix * landingPadModelMatrix);
-	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", viewMatrix * landingPadModelMatrix);
-	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix",
-	                          inverse(transpose(viewMatrix * landingPadModelMatrix)));
+	mat4 landingPadMVP = projectionMatrix * viewMatrix * landingPadModelMatrix; // Landing pag in clip space (Canonical view volume)
+	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix", landingPadMVP);
+
+	mat4 landingPadViewSpcae = viewMatrix * landingPadModelMatrix; // landing pag in view space, as if the camera was in the origin looking along -z
+	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", landingPadViewSpcae);
+
+	mat4 landingPadNormalsMatrix = inverse(transpose(viewMatrix * landingPadModelMatrix)); 
+	// The inverse transpose accounts for scaling, keeping the normals orthogonal to the vectors that define a vertex
+	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", landingPadNormalsMatrix);
 
 	labhelper::render(landingpadModel);
 
@@ -236,7 +242,7 @@ void display(void)
 	///////////////////////////////////////////////////////////////////////////
 	// Check if window size has changed and resize buffers as needed
 	///////////////////////////////////////////////////////////////////////////
-	{
+	{  // The brakets create a scope for local variables
 		int w, h;
 		SDL_GetWindowSize(g_window, &w, &h);
 		if(w != windowWidth || h != windowHeight)
@@ -250,12 +256,15 @@ void display(void)
 	///////////////////////////////////////////////////////////////////////////
 	// setup matrices
 	///////////////////////////////////////////////////////////////////////////
+								// Fiel of view			Aspect ratio						near  &	 far  planes
 	mat4 projMatrix = perspective(radians(45.0f), float(windowWidth) / float(windowHeight), 5.0f, 2000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
 
 	vec4 lightStartPosition = vec4(40.0f, 40.0f, 0.0f, 1.0f);
 	lightPosition = vec3(rotate(currentTime, worldUp) * lightStartPosition);
 	mat4 lightViewMatrix = lookAt(lightPosition, vec3(0.0f), worldUp);
+
+	// notice that the light projection matix has different viewing cofigurations than the camera
 	mat4 lightProjMatrix = perspective(radians(45.0f), 1.0f, 25.0f, 100.0f);
 
 	///////////////////////////////////////////////////////////////////////////
