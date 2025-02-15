@@ -45,6 +45,12 @@ bool g_isMouseDragging = false;
 // Shader programs
 ///////////////////////////////////////////////////////////////////////////////
 GLuint backgroundProgram, shaderProgram, postFxShader;
+GLuint perlinWorleyNoiseProgram;
+
+///////////////////////////////////////////////////////////////////////////////
+// Noise textures
+///////////////////////////////////////////////////////////////////////////////
+GLuint perlinWorleyNoise;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
@@ -108,18 +114,24 @@ int filterSizes[12] = { 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 };
 
 struct FboInfo;
 std::vector<FboInfo> fboList;
+// The noise textures are also store in this frame buffers
 
 ///////////////////////////////////////////////////////////////////////////////
 /// Holds and manages a framebuffer object
 ///////////////////////////////////////////////////////////////////////////////
 struct FboInfo
 {
-	GLuint framebufferId;
-	GLuint colorTextureTarget;
-	GLuint depthBuffer;
-	int width;
-	int height;
-	bool isComplete;
+	GLuint		framebufferId;
+	GLuint		colorTextureTarget;
+	GLuint		noiseTextureTarget;
+	GLuint		depthBuffer;
+	int			width;
+	int			height;
+	int			depth = 0;
+	bool		isComplete;
+
+	// For off-screen render-to-texture that are just noises
+	bool		isNoise = false;
 
 	FboInfo(int w, int h)
 	{
@@ -181,6 +193,50 @@ struct FboInfo
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
+	// Constructor for a noise buffer
+	FboInfo(int w, int h, int d, bool noise)
+	{
+		isNoise		= noise;
+		isComplete	= false;
+		width		= w;
+		height		= h;
+		depth		= d;
+
+		glGenTextures(1, &noiseTextureTarget);
+		glBindTexture(GL_TEXTURE_3D, noiseTextureTarget);
+		glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, width, height, depth, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		
+		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+		///////////////////////////////////////////////////////////////////////
+		// Generate and bind framebuffer
+		///////////////////////////////////////////////////////////////////////
+		glGenFramebuffers(1, &framebufferId);
+		glBindFramebuffer(GL_FRAMEBUFFER, framebufferId);
+
+		// Attach the color textute target to which OpenGl will write color data
+		glFramebufferTexture3D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_3D, noiseTextureTarget, 0, 0);
+		glDrawBuffer(GL_COLOR_ATTACHMENT0); // Difine to which attactment to draw
+
+		// Attach the depth texture
+		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthBuffer, 0);
+
+		// check if framebuffer is complete
+		isComplete = checkFramebufferComplete(); // Potential Error
+
+		// bind default framebuffer, just in case.
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		///////// Render Doc Labels
+		glObjectLabel(GL_TEXTURE, noiseTextureTarget, -1, "perlin_worley_noise_texture_target");
+		glObjectLabel(GL_FRAMEBUFFER, framebufferId, -1, "off_screen_framebuffer_noise");
+		/////////
+	}
+
 	// if no resolution provided
 	FboInfo()
 	    : isComplete(false)
@@ -190,8 +246,12 @@ struct FboInfo
 	    , width(0)
 	    , height(0){};
 
+	~FboInfo() {};
+
 	void resize(int w, int h)
 	{
+		if (isNoise) return; // avoids resizing fixed-size noise texture
+
 		width = w;
 		height = h;
 		// Allocate a texture
@@ -221,6 +281,8 @@ struct FboInfo
 };
 
 
+FboInfo* noiseFramebuffer;
+
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is called once at the start of the program and never again
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,10 +309,13 @@ void initialize()
 	postFxShader = labhelper::loadShaderProgram("../lab5-rendertotexture/postFx.vert",
 	                                            "../lab5-rendertotexture/postFx.frag");
 
+	perlinWorleyNoiseProgram = labhelper::loadShaderProgram("../lab5-rendertotexture/perlin_worley_noise.vert",
+																"../lab5-rendertotexture/perlin_worley_noise.frag");
 	// Labeling Shader programs for Render Doc
 	glObjectLabel(GL_PROGRAM, backgroundProgram, -1, "BackgroundProgram");
 	glObjectLabel(GL_PROGRAM, shaderProgram, -1, "MainShaderProgramProgram");
 	glObjectLabel(GL_PROGRAM, postFxShader, -1, "PostFxShader");
+	glObjectLabel(GL_PROGRAM, perlinWorleyNoiseProgram, -1, "PerlinWorleyNoiseProgram");
 
 	///////////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -282,6 +347,11 @@ void initialize()
 	{
 		fboList.push_back(FboInfo(w, h));
 	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// Setup Framebuffers for Noise Textures
+	///////////////////////////////////////////////////////////////////////////
+	noiseFramebuffer = new FboInfo(128, 128, 128, true);
 }
 
 
@@ -354,6 +424,35 @@ void drawCamera(const mat4& camView, const mat4& view, const mat4& projection)
 	labhelper::render(cameraModel);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+/// Send a full-screen triangle through the pipeline. 
+///////////////////////////////////////////////////////////////////////////////
+void drawFullScreenTriangle()
+{
+	GLboolean previous_depth_state;
+	glGetBooleanv(GL_DEPTH_TEST, &previous_depth_state);
+	glDisable(GL_DEPTH_TEST);
+	static GLuint vertexArrayObject = 0;
+	static int nofVertices = 3;
+	// do this initialization first time the function is called...
+	if (vertexArrayObject == 0)
+	{
+		glGenVertexArrays(1, &vertexArrayObject);
+		static const glm::vec2 positions[] = { 
+												{	-1.0f,	1.0f	},
+												{	-1.0f, -3.0f	}, 
+												{	 3.0f,	1.0f	}
+		};
+		labhelper::createAddAttribBuffer(vertexArrayObject, positions, labhelper::array_length(positions) * sizeof(glm::vec2), 0, 2, GL_FLOAT);
+	}
+	glBindVertexArray(vertexArrayObject);
+	glDrawArrays(GL_TRIANGLES, 0, nofVertices);
+	if (previous_depth_state)
+		glEnable(GL_DEPTH_TEST);
+	glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 /// This function will be called once per frame, so the code to set up
@@ -361,6 +460,37 @@ void drawCamera(const mat4& camView, const mat4& view, const mat4& projection)
 ///////////////////////////////////////////////////////////////////////////////
 void display()
 {
+	///////////////////////////////////////////////////////////////////////////
+	// Noise
+	///////////////////////////////////////////////////////////////////////////
+	{
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "NOISE_GENERATION");
+		
+		glDisable(GL_DEPTH_TEST);
+		//glEnable(GL_TEXTURE_3D); // This is causing problems
+		glBindFramebuffer(GL_FRAMEBUFFER, noiseFramebuffer->framebufferId);
+		glViewport(0, 0, noiseFramebuffer->width, noiseFramebuffer->height); // The size of the window to render
+		glClearColor(1.0f, 1.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		// Call draw
+		glUseProgram(perlinWorleyNoiseProgram); // The new pipeline definition
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_3D, noiseFramebuffer->noiseTextureTarget);
+
+		for (size_t i = 0; i < (size_t)noiseFramebuffer->depth; i++)
+		{
+			labhelper::setUniformSlow(perlinWorleyNoiseProgram, "slice",(int)i);
+			glFramebufferTexture3D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_3D, noiseFramebuffer->noiseTextureTarget, 0, i);
+			drawFullScreenTriangle();
+			
+		}
+
+		//glDisable(GL_TEXTURE_3D);
+		glEnable(GL_DEPTH_TEST);
+		glPopDebugGroup();
+	}
+
 	///////////////////////////////////////////////////////////////////////////
 	// Check if any framebuffer needs to be resized
 	///////////////////////////////////////////////////////////////////////////
@@ -643,6 +773,8 @@ int main(int argc, char* argv[])
 		// Swap front and back buffer. This frame will now been displayed.
 		SDL_GL_SwapWindow(g_window);
 	}
+	// Delete Frames
+	delete noiseFramebuffer;
 
 	// Free Models
 	labhelper::freeModel(landingpadModel);
