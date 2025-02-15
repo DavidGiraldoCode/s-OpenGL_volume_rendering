@@ -17,3 +17,10 @@
 
 - These algorithms change the appearance of the pixels that were rendered off-screen and, thus, the look of the game. Each algorithm requires a new shader program because it is a different pipeline that acts on the fragments of the full-screen quad and not on all of the vertices of the meshes in the scene.
 - Other algorithms that use this technique are shadow maps, which render the scene from the perspective of the light and write only the depth information, screen-space reflections, and ambient occlusion.
+
+
+**Rendering 3D Textures**
+In OpenGL, texture and access to textures happens in 2D. There is no access to depth for the texture volume. So one needs to set on the C++ slide to what slice of the 3D texture one wants to render to. So, it becomes very expensive. This is why *Compute Shaders* becomes more in-handy.
+
+**Full-screen triangle instead of full-screen quad**
+To save some vertices computations, it is more optimal to define a triangle that covers the viewport. Just keep in mind the order, otherwise it will be culled out by it face orientation.
