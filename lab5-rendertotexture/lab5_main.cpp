@@ -46,6 +46,7 @@ bool g_isMouseDragging = false;
 ///////////////////////////////////////////////////////////////////////////////
 GLuint backgroundProgram, shaderProgram, postFxShader;
 GLuint perlinWorleyNoiseProgram;
+GLuint volumetricSphereProgram;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Noise textures
@@ -115,6 +116,7 @@ int filterSizes[12] = { 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 };
 struct FboInfo;
 std::vector<FboInfo> fboList;
 // The noise textures are also store in this frame buffers
+// The volumetric sphere is store as a color texture target 
 
 ///////////////////////////////////////////////////////////////////////////////
 /// Holds and manages a framebuffer object
@@ -282,6 +284,7 @@ struct FboInfo
 
 
 FboInfo* noiseFramebuffer;
+FboInfo volumetricSphereFramebuffer;
 
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is called once at the start of the program and never again
@@ -311,11 +314,16 @@ void initialize()
 
 	perlinWorleyNoiseProgram = labhelper::loadShaderProgram("../lab5-rendertotexture/perlin_worley_noise.vert",
 																"../lab5-rendertotexture/perlin_worley_noise.frag");
+	
+	volumetricSphereProgram = labhelper::loadShaderProgram("../lab5-rendertotexture/volumetric_sphere.vert",
+															"../lab5-rendertotexture/volumetric_sphere.frag");
+
 	// Labeling Shader programs for Render Doc
 	glObjectLabel(GL_PROGRAM, backgroundProgram, -1, "BackgroundProgram");
 	glObjectLabel(GL_PROGRAM, shaderProgram, -1, "MainShaderProgramProgram");
 	glObjectLabel(GL_PROGRAM, postFxShader, -1, "PostFxShader");
 	glObjectLabel(GL_PROGRAM, perlinWorleyNoiseProgram, -1, "PerlinWorleyNoiseProgram");
+	glObjectLabel(GL_PROGRAM, volumetricSphereProgram, -1, "VolumetricSphereProgram");
 
 	///////////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -348,10 +356,13 @@ void initialize()
 		fboList.push_back(FboInfo(w, h));
 	}
 
+	volumetricSphereFramebuffer = FboInfo(w, h);
 	///////////////////////////////////////////////////////////////////////////
 	// Setup Framebuffers for Noise Textures
 	///////////////////////////////////////////////////////////////////////////
 	noiseFramebuffer = new FboInfo(128, 128, 128, true);
+
+
 }
 
 
