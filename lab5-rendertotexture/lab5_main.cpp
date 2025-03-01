@@ -590,12 +590,15 @@ void display()
 
 		glUseProgram(volumetricSphereProgram);
 
+		mat4 volumeSphereModelMatrix = translate(vec3(25,0,-25));
+		
 		GLint uniformLocation;
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
 		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
 		
+
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "view_projection_matrix");
-		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix * volumeSphereModelMatrix)[0].x); // Pass the value of the first argument
 		
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "width");
 		glUniform1i(uniformLocation, volumetricSphereFramebuffer.width);

@@ -3,8 +3,8 @@
 // required by GLSL spec Sect 4.5.3 (though nvidia does not, amd does)
 precision highp float;
 
-uniform vec3	sphere_center						= vec3(0,0,0);
-uniform float	sphere_radius						= 20.0;
+uniform vec3	sphere_center						= vec3(25,0,-25);//(20, 5,-40);
+uniform float	sphere_radius						= 50.0;
 uniform mat4	inverse_view_projection_matrix      = mat4(0);
 uniform mat4	view_projection_matrix				= mat4(0);
 uniform int		width								= 1;//1280;
@@ -85,18 +85,51 @@ void main()
 		vec4 sceneColor = texture(sceneColorTexture, fagUV);
 		
 		vec3 t0_position = camera_position + ray_direction * t0;
+		vec3 t1_position = camera_position + ray_direction * t1;
+
 		vec4 t0_clipSpace = view_projection_matrix * vec4(t0_position.xyz,1);
 
+		float ndc_z = t0_clipSpace.z / t0_clipSpace.w;
 
-		color = (sceneColor * (1.0 - 0.5)) + (0.5 * vec4(1, 1, 1, 0.5));
+		float n = 15.0; // camera z near
+		float f = 1000.0; // camera z far
+		float linearNDC_z = (2.0 * n) / (f + n - ndc_z * (f - n));
+
+		if(linearNDC_z > d)
+		{
+			color = texture(sceneColorTexture, fagUV);
+			
+			//color = vec4(d,d,d,1);
+		}
+		else
+		{
+			//color = vec4(linearNDC_z, linearNDC_z, linearNDC_z, 1 );
+			float world_space_lenght = length(t1_position - t0_position);
+			float optical_depth =  world_space_lenght / (sphere_radius * 2.0);
+			float transmittance = exp(-optical_depth);
+			vec4 volume_albedo = vec4(1,1,1,1);
+			float opacity = 1.0 - transmittance;// * transmittance;
+			//color = vec4(transmittance, transmittance, transmittance, 1 );
+
+			//color.rgb = (sceneColor.rgb * (1.0 - transmittance)) + (transmittance * volume_albedo.rgb);
+			//color.a = (sceneColor.a * (1.0 - transmittance)) + (transmittance * volume_albedo.a);
+			color = (sceneColor * (1.0 - opacity)) + (opacity * volume_albedo);
+		}
+		vec3 normal = normalize(t0_position - sphere_center);
+		vec3 light  = vec3(0,1,0); 
+		float lambert = max(0, dot(light, normal));
+
+		//color = vec4(1, 1, 1, 0.5 ) * lambert;
 	}
 	else
 	{
+		
+		//color = vec4(d,d,d,1);
 		color = texture(sceneColorTexture, fagUV);
 	}
 
 	fragmentColor = color; 
-	return;
+	//return;
 	//fragmentColor = vec4(d,d,d,1);
 	//fragmentColor = vec4(fagUV.xy, 0.0, 1.0);
 	//fragmentColor = vec4(normalized_device_coords.xy, 0.0, 1.0);
