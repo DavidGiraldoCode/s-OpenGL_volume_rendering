@@ -525,7 +525,7 @@ void display()
 
 	mat4 projectionMatrix = perspective(radians(45.0f), float(w) / float(h), 10.0f, 1000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
-
+	
 	///////////////////////////////////////////////////////////////////////////
 	// Bind the environment map(s) to unused texture units
 	///////////////////////////////////////////////////////////////////////////
@@ -539,7 +539,6 @@ void display()
 	///////////////////////////////////////////////////////////////////////////
 	// draw scene from security camera
 	///////////////////////////////////////////////////////////////////////////
-	// Task 2
 	// Bind the framebuffer to update the state machine
 	{
 		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "OFF_SCREEN_SECURITY_CAMERA_POV");
@@ -578,6 +577,43 @@ void display()
 		drawCamera(securityCamViewMatrix, viewMatrix, projectionMatrix);
 		glPopDebugGroup();
 	}
+	///////////////////////////////////////////////////////////////////////////
+	// Volumetric Render Pass
+	///////////////////////////////////////////////////////////////////////////
+	{
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "VOLUMETRIC_PASS");
+
+		glBindFramebuffer(GL_FRAMEBUFFER, volumetricSphereFramebuffer.framebufferId);
+		glViewport(0, 0, volumetricSphereFramebuffer.width, volumetricSphereFramebuffer.height);
+		glClearColor(0.f, 1.f, 0.f, 1.f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(volumetricSphereProgram);
+
+		GLint uniformLocation;
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix* viewMatrix)[0].x); // Pass the value of the first argument
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "width");
+		glUniform1i(uniformLocation, volumetricSphereFramebuffer.width);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "height");
+		glUniform1i(uniformLocation, volumetricSphereFramebuffer.height);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "normalize_factors");
+		vec2 normalize_extend = vec2(1.0) / vec2((float)volumetricSphereFramebuffer.width, (float)volumetricSphereFramebuffer.height);
+		glUniform2fv(uniformLocation, 1, &normalize_extend.x);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "camera_position");
+		glUniform3fv(uniformLocation, 1,  &cameraPosition.x);
+
+		//glBindTexture(GL_TEXTURE_2D, volumetricSphereFramebuffer.colorTextureTarget);
+		//glActiveTexture(GL_TEXTURE0);
+		drawFullScreenTriangle();
+
+		glPopDebugGroup();
+	}
+
 	// Until this point, the screen will show a balck window, since out default frame buffer has no render data.
 	// The reneder data has been written in the framebuffer [1]. This is an off-screen render target that we can sample latter
 	// To render again to the screen we:
@@ -600,7 +636,8 @@ void display()
 		labhelper::setUniformSlow(postFxShader, "filterSize", filterSizes[filterSize - 1]);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
+		glBindTexture(GL_TEXTURE_2D, volumetricSphereFramebuffer.colorTextureTarget);
+		//glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
 		labhelper::drawFullScreenQuad();
 		glPopDebugGroup();
 	}
