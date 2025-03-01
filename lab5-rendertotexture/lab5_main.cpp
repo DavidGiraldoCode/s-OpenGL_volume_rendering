@@ -592,7 +592,10 @@ void display()
 
 		GLint uniformLocation;
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
-		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix* viewMatrix)[0].x); // Pass the value of the first argument
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "view_projection_matrix");
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
 		
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "width");
 		glUniform1i(uniformLocation, volumetricSphereFramebuffer.width);
@@ -607,18 +610,33 @@ void display()
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "camera_position");
 		glUniform3fv(uniformLocation, 1,  &cameraPosition.x);
 
-		//glBindTexture(GL_TEXTURE_2D, volumetricSphereFramebuffer.colorTextureTarget);
-		//glActiveTexture(GL_TEXTURE0);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, fboList[1].depthBuffer);
+	
 		drawFullScreenTriangle();
 
 		glPopDebugGroup();
+	}
+	{
+		/*glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "VOLUMETRIC_COMPOSITE");
+
+		glBindFramebuffer(GL_FRAMEBUFFER, fboList[2].framebufferId);
+		glViewport(0, 0, fboList[2].width, fboList[2].height);
+		glClearColor(1, 0, 1, 1);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+
+		glPopDebugGroup();*/
 	}
 
 	// Until this point, the screen will show a balck window, since out default frame buffer has no render data.
 	// The reneder data has been written in the framebuffer [1]. This is an off-screen render target that we can sample latter
 	// To render again to the screen we:
 	{
-		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "COMPOSITE");
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "BACKBUFFER_COMPOSITE");
 		// Bind the default frame buffer again, set the viewport and clear it
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glViewport(0, 0, w, h);
