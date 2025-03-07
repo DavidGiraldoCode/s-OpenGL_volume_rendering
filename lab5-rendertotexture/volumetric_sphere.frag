@@ -3,7 +3,7 @@
 // required by GLSL spec Sect 4.5.3 (though nvidia does not, amd does)
 precision highp float;
 
-uniform vec3	sphere_center						= vec3(25,0,-25);//(20, 5,-40);
+uniform vec3	sphere_center						= vec3(0,0,0);// 25,0,-25 (20, 5,-40);
 uniform float	sphere_radius						= 50.0;
 uniform mat4	inverse_view_projection_matrix      = mat4(0);
 uniform mat4	view_projection_matrix				= mat4(0);

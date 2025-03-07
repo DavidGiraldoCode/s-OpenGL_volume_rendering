@@ -56,9 +56,9 @@ GLuint perlinWorleyNoise;
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
 ///////////////////////////////////////////////////////////////////////////////
-float environment_multiplier = 1.0f;
-GLuint environmentMap, irradianceMap, reflectionMap;
-const std::string envmap_base_name = "001";
+float	environment_multiplier = 1.0f;
+GLuint	environmentMap, irradianceMap, reflectionMap;
+const	std::string envmap_base_name = "001";
 
 ///////////////////////////////////////////////////////////////////////////////
 // Light source
@@ -87,6 +87,12 @@ labhelper::Model* sphereModel = nullptr;
 labhelper::Model* cameraModel = nullptr;
 
 float fighterRotateSpeed = 0;
+
+///////////////////////////////////////////////////////////////////////////////
+// Volumetrics
+///////////////////////////////////////////////////////////////////////////////
+vec3	volume_sphere_center	= vec3(0.f,0.f,0.f);
+float	volume_sphere_radius	= 50.f;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Post processing effects
@@ -593,12 +599,19 @@ void display()
 		mat4 volumeSphereModelMatrix = translate(vec3(25,0,-25));
 		
 		GLint uniformLocation;
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "sphere_center");
+		glUniform3fv(uniformLocation, 1, &volume_sphere_center.x); // Pass the value of the first argument411
+
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "sphere_radius");
+		glUniform1fv(uniformLocation, 1, &volume_sphere_radius);
+
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
 		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
 		
 
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "view_projection_matrix");
-		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix * volumeSphereModelMatrix)[0].x); // Pass the value of the first argument
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix /* volumeSphereModelMatrix*/)[0].x); // Pass the value of the first argument
 		
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "width");
 		glUniform1i(uniformLocation, volumetricSphereFramebuffer.width);
@@ -785,9 +798,14 @@ bool handleEvents(void)
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is to hold the general GUI logic
 ///////////////////////////////////////////////////////////////////////////////
+float volume_center[3] = { 62.500f , -45.833f,  -61.983f };
 void gui()
 {
 	// ----------------- Set variables --------------------------
+	ImGui::Text("Volumetrics");
+	ImGui::SliderFloat3("Sphere center", volume_center, -500, 500);
+	ImGui::SliderFloat("Sphere radius", &volume_sphere_radius, 10.f, 1000.f);
+	ImGui::SameLine();
 	ImGui::Text("Post-processing effect");
 	ImGui::RadioButton("None", &currentEffect, PostProcessingEffect::None);
 	ImGui::RadioButton("Sepia", &currentEffect, PostProcessingEffect::Sepia);
@@ -803,6 +821,7 @@ void gui()
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
 	            ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
+	volume_sphere_center = vec3(volume_center[0], volume_center[1], volume_center[2]);
 }
 
 int main(int argc, char* argv[])
