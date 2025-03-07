@@ -46,6 +46,7 @@ bool g_isMouseDragging = false;
 ///////////////////////////////////////////////////////////////////////////////
 GLuint backgroundProgram, shaderProgram, postFxShader;
 GLuint perlinWorleyNoiseProgram;
+GLuint volumetricSphereProgram;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Noise textures
@@ -55,9 +56,9 @@ GLuint perlinWorleyNoise;
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
 ///////////////////////////////////////////////////////////////////////////////
-float environment_multiplier = 1.0f;
-GLuint environmentMap, irradianceMap, reflectionMap;
-const std::string envmap_base_name = "001";
+float	environment_multiplier = 1.0f;
+GLuint	environmentMap, irradianceMap, reflectionMap;
+const	std::string envmap_base_name = "001";
 
 ///////////////////////////////////////////////////////////////////////////////
 // Light source
@@ -88,6 +89,13 @@ labhelper::Model* cameraModel = nullptr;
 float fighterRotateSpeed = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
+// Volumetrics
+///////////////////////////////////////////////////////////////////////////////
+vec3	volume_sphere_center	= vec3(0.f,0.f,0.f);
+float	volume_sphere_radius	= 50.f;
+float	volume_density			= 1.f;
+
+///////////////////////////////////////////////////////////////////////////////
 // Post processing effects
 ///////////////////////////////////////////////////////////////////////////////
 enum PostProcessingEffect
@@ -115,6 +123,7 @@ int filterSizes[12] = { 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25 };
 struct FboInfo;
 std::vector<FboInfo> fboList;
 // The noise textures are also store in this frame buffers
+// The volumetric sphere is store as a color texture target 
 
 ///////////////////////////////////////////////////////////////////////////////
 /// Holds and manages a framebuffer object
@@ -282,6 +291,7 @@ struct FboInfo
 
 
 FboInfo* noiseFramebuffer;
+FboInfo volumetricSphereFramebuffer;
 
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is called once at the start of the program and never again
@@ -311,11 +321,16 @@ void initialize()
 
 	perlinWorleyNoiseProgram = labhelper::loadShaderProgram("../lab5-rendertotexture/perlin_worley_noise.vert",
 																"../lab5-rendertotexture/perlin_worley_noise.frag");
+	
+	volumetricSphereProgram = labhelper::loadShaderProgram("../lab5-rendertotexture/volumetric_sphere.vert",
+															"../lab5-rendertotexture/volumetric_sphere.frag");
+
 	// Labeling Shader programs for Render Doc
 	glObjectLabel(GL_PROGRAM, backgroundProgram, -1, "BackgroundProgram");
 	glObjectLabel(GL_PROGRAM, shaderProgram, -1, "MainShaderProgramProgram");
 	glObjectLabel(GL_PROGRAM, postFxShader, -1, "PostFxShader");
 	glObjectLabel(GL_PROGRAM, perlinWorleyNoiseProgram, -1, "PerlinWorleyNoiseProgram");
+	glObjectLabel(GL_PROGRAM, volumetricSphereProgram, -1, "VolumetricSphereProgram");
 
 	///////////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -348,10 +363,13 @@ void initialize()
 		fboList.push_back(FboInfo(w, h));
 	}
 
+	volumetricSphereFramebuffer = FboInfo(w, h);
 	///////////////////////////////////////////////////////////////////////////
 	// Setup Framebuffers for Noise Textures
 	///////////////////////////////////////////////////////////////////////////
 	noiseFramebuffer = new FboInfo(128, 128, 128, true);
+
+
 }
 
 
@@ -514,7 +532,7 @@ void display()
 
 	mat4 projectionMatrix = perspective(radians(45.0f), float(w) / float(h), 10.0f, 1000.0f);
 	mat4 viewMatrix = lookAt(cameraPosition, cameraPosition + cameraDirection, worldUp);
-
+	
 	///////////////////////////////////////////////////////////////////////////
 	// Bind the environment map(s) to unused texture units
 	///////////////////////////////////////////////////////////////////////////
@@ -528,7 +546,6 @@ void display()
 	///////////////////////////////////////////////////////////////////////////
 	// draw scene from security camera
 	///////////////////////////////////////////////////////////////////////////
-	// Task 2
 	// Bind the framebuffer to update the state machine
 	{
 		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, "OFF_SCREEN_SECURITY_CAMERA_POV");
@@ -567,11 +584,79 @@ void display()
 		drawCamera(securityCamViewMatrix, viewMatrix, projectionMatrix);
 		glPopDebugGroup();
 	}
+	///////////////////////////////////////////////////////////////////////////
+	// Volumetric Render Pass
+	///////////////////////////////////////////////////////////////////////////
+	{
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "VOLUMETRIC_PASS");
+
+		glBindFramebuffer(GL_FRAMEBUFFER, volumetricSphereFramebuffer.framebufferId);
+		glViewport(0, 0, volumetricSphereFramebuffer.width, volumetricSphereFramebuffer.height);
+		glClearColor(0.f, 1.f, 0.f, 1.f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(volumetricSphereProgram);
+
+		mat4 volumeSphereModelMatrix = translate(vec3(25,0,-25));
+		
+		GLint uniformLocation;
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "sphere_center");
+		glUniform3fv(uniformLocation, 1, &volume_sphere_center.x); // Pass the value of the first argument411
+
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "sphere_radius");
+		glUniform1fv(uniformLocation, 1, &volume_sphere_radius);
+
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "density");
+		glUniform1fv(uniformLocation, 1, &volume_density);
+
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
+		
+
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "view_projection_matrix");
+		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &(projectionMatrix * viewMatrix /* volumeSphereModelMatrix*/)[0].x); // Pass the value of the first argument
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "width");
+		glUniform1i(uniformLocation, volumetricSphereFramebuffer.width);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "height");
+		glUniform1i(uniformLocation, volumetricSphereFramebuffer.height);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "normalize_factors");
+		vec2 normalize_extend = vec2(1.0) / vec2((float)volumetricSphereFramebuffer.width, (float)volumetricSphereFramebuffer.height);
+		glUniform2fv(uniformLocation, 1, &normalize_extend.x);
+		
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "camera_position");
+		glUniform3fv(uniformLocation, 1,  &cameraPosition.x);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, fboList[1].depthBuffer);
+	
+		drawFullScreenTriangle();
+
+		glPopDebugGroup();
+	}
+	{
+		/*glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "VOLUMETRIC_COMPOSITE");
+
+		glBindFramebuffer(GL_FRAMEBUFFER, fboList[2].framebufferId);
+		glViewport(0, 0, fboList[2].width, fboList[2].height);
+		glClearColor(1, 0, 1, 1);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+
+		glPopDebugGroup();*/
+	}
+
 	// Until this point, the screen will show a balck window, since out default frame buffer has no render data.
 	// The reneder data has been written in the framebuffer [1]. This is an off-screen render target that we can sample latter
 	// To render again to the screen we:
 	{
-		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "COMPOSITE");
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2, -1, "BACKBUFFER_COMPOSITE");
 		// Bind the default frame buffer again, set the viewport and clear it
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glViewport(0, 0, w, h);
@@ -589,7 +674,8 @@ void display()
 		labhelper::setUniformSlow(postFxShader, "filterSize", filterSizes[filterSize - 1]);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
+		glBindTexture(GL_TEXTURE_2D, volumetricSphereFramebuffer.colorTextureTarget);
+		//glBindTexture(GL_TEXTURE_2D, fboList[1].colorTextureTarget);
 		labhelper::drawFullScreenQuad();
 		glPopDebugGroup();
 	}
@@ -716,9 +802,15 @@ bool handleEvents(void)
 ///////////////////////////////////////////////////////////////////////////////
 /// This function is to hold the general GUI logic
 ///////////////////////////////////////////////////////////////////////////////
+float volume_center[3] = { 62.500f , -45.833f,  -61.983f };
 void gui()
 {
 	// ----------------- Set variables --------------------------
+	ImGui::Text("Volumetrics");
+	ImGui::SliderFloat3("Sphere center", volume_center, -500, 500);
+	ImGui::SliderFloat("Sphere radius", &volume_sphere_radius, 10.f, 1000.f);
+	ImGui::SliderFloat("Volume density", &volume_density, 0.f, 1.f);
+	ImGui::SameLine();
 	ImGui::Text("Post-processing effect");
 	ImGui::RadioButton("None", &currentEffect, PostProcessingEffect::None);
 	ImGui::RadioButton("Sepia", &currentEffect, PostProcessingEffect::Sepia);
@@ -734,6 +826,7 @@ void gui()
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate,
 	            ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
+	volume_sphere_center = vec3(volume_center[0], volume_center[1], volume_center[2]);
 }
 
 int main(int argc, char* argv[])
