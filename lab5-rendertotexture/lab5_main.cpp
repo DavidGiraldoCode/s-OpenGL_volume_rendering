@@ -93,6 +93,7 @@ float fighterRotateSpeed = 0;
 ///////////////////////////////////////////////////////////////////////////////
 vec3	volume_sphere_center	= vec3(0.f,0.f,0.f);
 float	volume_sphere_radius	= 50.f;
+float	volume_density			= 1.f;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Post processing effects
@@ -606,6 +607,9 @@ void display()
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "sphere_radius");
 		glUniform1fv(uniformLocation, 1, &volume_sphere_radius);
 
+		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "density");
+		glUniform1fv(uniformLocation, 1, &volume_density);
+
 		uniformLocation = glGetUniformLocation(volumetricSphereProgram, "inverse_view_projection_matrix");
 		glUniformMatrix4fv(uniformLocation, 1, GL_FALSE, &inverse(projectionMatrix * viewMatrix)[0].x); // Pass the value of the first argument
 		
@@ -805,6 +809,7 @@ void gui()
 	ImGui::Text("Volumetrics");
 	ImGui::SliderFloat3("Sphere center", volume_center, -500, 500);
 	ImGui::SliderFloat("Sphere radius", &volume_sphere_radius, 10.f, 1000.f);
+	ImGui::SliderFloat("Volume density", &volume_density, 0.f, 1.f);
 	ImGui::SameLine();
 	ImGui::Text("Post-processing effect");
 	ImGui::RadioButton("None", &currentEffect, PostProcessingEffect::None);

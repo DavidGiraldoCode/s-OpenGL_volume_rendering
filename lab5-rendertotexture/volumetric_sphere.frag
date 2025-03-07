@@ -5,6 +5,7 @@ precision highp float;
 
 uniform vec3	sphere_center						= vec3(0,0,0);// 25,0,-25 (20, 5,-40);
 uniform float	sphere_radius						= 50.0;
+uniform float	density								= 1.0;
 uniform mat4	inverse_view_projection_matrix      = mat4(0);
 uniform mat4	view_projection_matrix				= mat4(0);
 uniform int		width								= 1;//1280;
@@ -83,7 +84,6 @@ void main()
 	if(hit(camera_position, ray_direction, sphere_center, sphere_radius, t0, t1))
 	{
 		vec4 sceneColor = texture(sceneColorTexture, fagUV);
-		
 		vec3 t0_position = camera_position + ray_direction * t0;
 		vec3 t1_position = camera_position + ray_direction * t1;
 
@@ -101,14 +101,16 @@ void main()
 			
 			//color = vec4(d,d,d,1);
 		}
-		else
+		else if(t0 < t1)
 		{
 			//color = vec4(linearNDC_z, linearNDC_z, linearNDC_z, 1 );
 			float world_space_lenght = length(t1_position - t0_position);
 			float optical_depth =  world_space_lenght / (sphere_radius * 2.0);
-			float transmittance = exp(-optical_depth);
+			float transmittance = exp(-optical_depth * density);
+			transmittance = transmittance > 1.0 ? 1.0 : transmittance;
+
 			vec4 volume_albedo = vec4(1,1,1,1);
-			float opacity = 1.0 - transmittance;// * transmittance;
+			float opacity = 1.0 - (transmittance * transmittance);
 			//color = vec4(transmittance, transmittance, transmittance, 1 );
 
 			//color.rgb = (sceneColor.rgb * (1.0 - transmittance)) + (transmittance * volume_albedo.rgb);
